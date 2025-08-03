@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -38,7 +38,7 @@ class User(UserMixin, db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'email': self.email,
+            'email': self.email
             'first_name': self.first_name,
             'last_name': self.last_name,
             'cat_name': self.cat_name,
@@ -48,7 +48,54 @@ class User(UserMixin, db.Model):
             'daily_target_ml': self.daily_target_ml,
             'timezone': self.timezone,
             'created_at': self.created_at.isoformat(),
-            'last_login': self.last_login.isoformat() if self.last_login else None
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'is_active': self.is_active
+        }
+
+    def check_activity(self):
+        """Check user activity and mark for deactivation/deletion based on last login"""
+        if not self.last_login:
+            return None  # Skip users who have never logged in
+        
+        now = datetime.utcnow()
+        days_inactive = (now - self.last_login).days
+        
+        # Mark inactive after 60 days of no login
+        if days_inactive >= 60 and self.is_active:
+            self.is_active = False
+            return 'deactivated'
+        
+        # Mark for deletion after 120 days of no login
+        elif days_inactive >= 120:
+            return 'delete'
+        
+        return None
+    
+    @classmethod
+    def cleanup_inactive_users(cls):
+        """Class method to find and handle inactive users"""
+        inactive_users = cls.query.filter(cls.is_active == True).all()
+        users_to_delete = []
+        deactivated_count = 0
+        
+        for user in inactive_users:
+            status = user.check_activity()
+            if status == 'deactivated':
+                deactivated_count += 1
+            elif status == 'delete':
+                users_to_delete.append(user)
+        
+        # Delete users marked for deletion
+        deleted_count = len(users_to_delete)
+        for user in users_to_delete:
+            db.session.delete(user)
+        
+        if deactivated_count > 0 or deleted_count > 0:
+            db.session.commit()
+        
+        return {
+            'deactivated': deactivated_count,
+            'deleted': deleted_count
         }
 
 class FeedingLog(db.Model):

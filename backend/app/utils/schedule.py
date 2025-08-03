@@ -1,7 +1,7 @@
 import threading
 import time
 from datetime import date, datetime, timedelta
-from app.models import DailyFeedingTracker
+from app.models import DailyFeedingTracker, User
 from app import db
 
 class TrackerScheduler:
@@ -55,6 +55,9 @@ class TrackerScheduler:
             # Clean up old trackers (keep last 30 days)
             self._cleanup_old_trackers(days_to_keep=30)
             
+            # Check user activity and cleanup inactive users
+            self._cleanup_inactive_users()
+            
             # Note: New trackers are created automatically when needed
             # via get_or_create_today_tracker() in the routes
             
@@ -93,10 +96,32 @@ class TrackerScheduler:
             # print(f"Error cleaning up old trackers: {str(e)}")
             pass
             
+    def _cleanup_inactive_users(self):
+        """Clean up inactive users based on last login activity"""
+        try:
+            # Use app context for database operations
+            from app import create_app
+            app = create_app()
+            
+            with app.app_context():
+                result = User.cleanup_inactive_users()
+                
+                if result['deactivated'] > 0 or result['deleted'] > 0:
+                    print(f"User cleanup: {result['deactivated']} deactivated, {result['deleted']} deleted")
+                    
+        except Exception as e:
+            print(f"Error cleaning up inactive users: {str(e)}")
+            pass
+    
     def force_new_day_reset(self):
         """Manually trigger new day handling (for testing)"""
         # print("Forcing new day reset...")
         self._handle_new_day()
+    
+    def force_user_cleanup(self):
+        """Manually trigger user cleanup (for testing)"""
+        print("Forcing user cleanup...")
+        self._cleanup_inactive_users()
 
 # Global scheduler instance
 tracker_scheduler = TrackerScheduler()

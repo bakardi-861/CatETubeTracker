@@ -4,6 +4,7 @@ from app.models import User
 from app import db
 import re
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -72,7 +73,7 @@ def register():
         db.session.commit()
         
         # Log the user in
-        login_user(user, remember=True)
+        login_user(user, remember=True) # False for logging out on every refresh.
         
         return jsonify({
             'message': 'Registration successful',
@@ -103,6 +104,8 @@ def login():
             return jsonify({'error': 'Invalid email or password'}), 401
         
         if not user.is_active:
+            #TODO: Prompt user to re-activate or stay deactivated. Show their total deactivated days If days reaches 120, account will be deleted automatically. 
+            # user.check_activity()
             return jsonify({'error': 'Account is deactivated'}), 401
         
         # Update last login
@@ -229,3 +232,61 @@ def deactivate_account():
         db.session.rollback()
         # print(f"Account deactivation error: {str(e)}")
         return jsonify({'error': 'Failed to deactivate account'}), 500
+
+@auth_bp.route('/delete', methods=['POST'])
+@login_required
+def delete_account():
+    """Delete user account"""
+    try:
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'error': 'Password confirmation required'}), 400
+        
+        if not current_user.check_password(password):
+            return jsonify({'error': 'Incorrect password'}), 401
+
+        # Check if user still exists (handle concurrent deletion)
+        user_to_delete = User.query.get(current_user.id)
+        if not user_to_delete:
+            return jsonify({'error': 'User already deleted'}), 404
+        
+        # Logout first to clear session
+        logout_user()
+        
+        # Delete user (cascades to all related data via model relationships)
+        db.session.delete(user_to_delete)
+        db.session.commit()
+        
+        return jsonify({'message': 'Account deleted successfully'}), 200
+        
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Cannot delete account due to data dependencies'}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({'error': 'Database error occurred'}), 500
+    except Exception as e:
+        db.session.rollback()
+        # print(f"Account deletion error: {str(e)}")
+        return jsonify({'error': 'Failed to delete account'}), 500
+
+@auth_bp.route('/cleanup-inactive', methods=['POST'])
+@login_required
+def cleanup_inactive_users():
+    """Manual trigger for inactive user cleanup (admin only)"""
+    try:
+        # Simple admin check - you might want to add proper role-based access
+        if not current_user.email.endswith('@admin.com'):  # Replace with your admin logic
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        result = User.cleanup_inactive_users()
+        
+        return jsonify({
+            'message': 'User cleanup completed',
+            'result': result
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Failed to cleanup users'}), 500

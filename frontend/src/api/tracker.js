@@ -2,9 +2,12 @@ import axios from 'axios';
 
 const TRACKER_API = 'http://localhost:8000/api/tracker';
 
+// Configure axios to include credentials for session management
+axios.defaults.withCredentials = true;
+
 export async function getTodayTracker() {
   try {
-    const response = await axios.get(`${TRACKER_API}/test/today`);
+    const response = await axios.get(`${TRACKER_API}/today`);
     return response.data;
   } catch (error) {
     const message = error.response?.data?.error || 'Failed to get today\'s tracker';
@@ -14,7 +17,7 @@ export async function getTodayTracker() {
 
 export async function createOrUpdateTodayTracker(dailyTarget) {
   try {
-    const response = await axios.post(`${TRACKER_API}/test/today`, {
+    const response = await axios.post(`${TRACKER_API}/today`, {
       daily_target_ml: dailyTarget
     }, {
       headers: {
@@ -47,7 +50,7 @@ export async function addFeedingToTracker(amountMl) {
 export async function resetTracker(newDailyTarget = null) {
   try {
     const payload = newDailyTarget ? { daily_target_ml: newDailyTarget } : {};
-    const response = await axios.post(`${TRACKER_API}/test/reset`, payload, {
+    const response = await axios.post(`${TRACKER_API}/reset`, payload, {
       headers: {
         'Content-Type': 'application/json',
       },
