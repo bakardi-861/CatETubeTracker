@@ -30,125 +30,65 @@ def get_or_create_today_tracker(user_id):
     
     return tracker
 
-@feeding_bp.route('/test', methods=['POST'])
-@limiter.limit("60 per minute")
-def test_feeding():
-    """Test endpoint without authentication that saves to database"""
-    try:
-        data = request.get_json()
-        
-        # Get or create test user
-        from app.models import User
-        test_user = User.query.filter_by(email='test@example.com').first()
-        if not test_user:
-            test_user = User(
-                email='test@example.com',
-                first_name='Test',
-                last_name='User',
-                cat_name='Test Cat'
-            )
-            test_user.set_password('testpass123')
-            db.session.add(test_user)
-            db.session.flush()  # Get the ID without committing
-        
-        # Create feeding log
-        log = FeedingLog(
-            amount_ml=data.get('amount_ml', 0),
-            flushed_before=data.get('flushed_before', True),
-            flushed_after=data.get('flushed_after', True),
-            user_id=test_user.id
-        )
-        db.session.add(log)
-        
-        # Update daily tracker
-        amount_ml = data.get('amount_ml', 0)
-        if amount_ml > 0:
-            tracker = get_or_create_today_tracker(test_user.id)
-            old_remaining = tracker.remaining_ml
-            tracker.add_feeding(amount_ml)
-            
-            db.session.commit()
-            
-            return jsonify({
-                "message": "Feeding logged to database!",
-                "data": {
-                    "amount_ml": log.amount_ml,
-                    "time_given": log.time_given.isoformat(),
-                    "id": log.id,
-                    "user_id": log.user_id
-                },
-                "tracker": {
-                    "remaining_ml": tracker.remaining_ml,
-                    "total_fed_ml": tracker.total_fed_ml,
-                    "daily_target_ml": tracker.daily_target_ml,
-                    "progress_percentage": tracker.get_progress_percentage(),
-                    "feeding_count": tracker.feeding_count,
-                    "is_completed": tracker.is_completed()
-                }
-            }), 201
-        else:
-            db.session.commit()
-            return jsonify({
-                "message": "Feeding logged to database!",
-                "data": {
-                    "amount_ml": log.amount_ml,
-                    "time_given": log.time_given.isoformat(),
-                    "id": log.id,
-                    "user_id": log.user_id
-                }
-            }), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+# Test endpoint removed for production security
 
 @feeding_bp.route('/', methods=['POST'])
 @login_required
 @limiter.limit("60 per minute")
 def create_feeding():
-    # print("POST /api/feeding/ called")
-
+    """Log feeding for authenticated user"""
     try:
         data = request.get_json()
-        # print("Received JSON:", data)
+        
+        # Validate required fields
+        if not data or 'amount_ml' not in data:
+            return jsonify({"error": "amount_ml is required"}), 400
+            
+        amount_ml = data.get('amount_ml', 0)
+        if amount_ml <= 0:
+            return jsonify({"error": "amount_ml must be greater than 0"}), 400
 
         # Create feeding log with user association
-        log = FeedingLog(user_id=current_user.id, **data)
+        log = FeedingLog(
+            user_id=current_user.id,
+            amount_ml=amount_ml,
+            flushed_before=data.get('flushed_before', True),
+            flushed_after=data.get('flushed_after', True)
+        )
         db.session.add(log)
         
         # Update daily tracker
-        amount_ml = data.get('amount_ml', 0)
-        if amount_ml > 0:
-            tracker = get_or_create_today_tracker(current_user.id)
-            old_remaining = tracker.remaining_ml
-            tracker.add_feeding(amount_ml)
-            
-            # Clear cache for this user's tracker
-            cache.delete(f'tracker_today_{current_user.id}')
-            
-            # print(f"Updated tracker: {amount_ml}mL fed, {tracker.remaining_ml}mL remaining")
-            
-            # Commit both the feeding log and tracker update
-            db.session.commit()
-            
-            return jsonify({
-                "message": "Feeding logged and tracker updated.",
-                "tracker": {
-                    "remaining_ml": tracker.remaining_ml,
-                    "total_fed_ml": tracker.total_fed_ml,
-                    "daily_target_ml": tracker.daily_target_ml,
-                    "progress_percentage": tracker.get_progress_percentage(),
-                    "feeding_count": tracker.feeding_count,
-                    "is_completed": tracker.is_completed()
-                }
-            }), 201
-        else:
-            db.session.commit()
-            return jsonify({"message": "Feeding logged."}), 201
+        tracker = get_or_create_today_tracker(current_user.id)
+        tracker.add_feeding(amount_ml)
+        
+        # Clear cache for this user's tracker
+        cache.delete(f'tracker_today_{current_user.id}')
+        
+        # Commit both the feeding log and tracker update
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Feeding logged successfully",
+            "data": {
+                "id": log.id,
+                "amount_ml": log.amount_ml,
+                "time_given": log.time_given.isoformat(),
+                "flushed_before": log.flushed_before,
+                "flushed_after": log.flushed_after
+            },
+            "tracker": {
+                "remaining_ml": tracker.remaining_ml,
+                "total_fed_ml": tracker.total_fed_ml,
+                "daily_target_ml": tracker.daily_target_ml,
+                "progress_percentage": tracker.get_progress_percentage(),
+                "feeding_count": tracker.feeding_count,
+                "is_completed": tracker.is_completed()
+            }
+        }), 201
 
     except Exception as e:
         db.session.rollback()
-        # print("Exception while saving feeding:", str(e))
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Failed to log feeding"}), 500
 
 @feeding_bp.route('/', methods=['GET'])
 @login_required

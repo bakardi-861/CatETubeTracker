@@ -1,10 +1,9 @@
 import axios from 'axios';
 
-const FEEDING_API = 'http://localhost:8000/api/feeding/test';
+const FEEDING_API = 'http://localhost:8000/api/feeding/';
 
-// export const logFeeding = (feedingData) => {
-//   return axios.post(`${API_BASE}`, feedingData);
-// };
+// Configure axios to include credentials for session management
+axios.defaults.withCredentials = true;
 
 export async function logFeeding(data) {
   try {
@@ -15,7 +14,17 @@ export async function logFeeding(data) {
     });
     return response.data;
   } catch (error) {
-    const message = error.response?.data?.message || 'feeding.js: POST request failed.';
+    const message = error.response?.data?.error || 'Failed to log feeding';
+    throw new Error(message);
+  }
+}
+
+export async function getFeedingHistory(page = 1, perPage = 50) {
+  try {
+    const response = await axios.get(`${FEEDING_API}?page=${page}&per_page=${perPage}`);
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.error || 'Failed to get feeding history';
     throw new Error(message);
   }
 }

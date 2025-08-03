@@ -94,6 +94,10 @@ def create_app(config_name='development'):
     from .utils.logger import setup_logging
     setup_logging(app)
     
+    # Setup security headers and middleware
+    from .utils.security import add_security_headers
+    add_security_headers(app)
+    
     app.logger.info("Registered all blueprints")
 
     # Start the tracker scheduler only in production or when specified
